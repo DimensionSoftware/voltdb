@@ -220,8 +220,11 @@ class Distributer {
                                 }
                                 iter.remove();
                                 m_rateLimiter.transactionResponseReceived(now, -1);
-                                int callbacksToInvoke = c.m_callbacksToInvoke.decrementAndGet();
-                                assert(callbacksToInvoke >= 0);
+                                // only bookkeep for user procs
+                                if (handle >= 0) {
+                                    int callbacksToInvoke = c.m_callbacksToInvoke.decrementAndGet();
+                                    assert(callbacksToInvoke >= 0);
+                                }
                             }
                         }
                     }
@@ -287,7 +290,10 @@ class Distributer {
 
                 assert(m_callbacks.containsKey(handle) == false);
                 m_callbacks.put(handle, new CallbackBookeeping(now, callback, name));
-                m_callbacksToInvoke.incrementAndGet();
+                // only bookkeep for user procs
+                if (handle >= 0) {
+                    m_callbacksToInvoke.incrementAndGet();
+                }
             }
             m_connection.writeStream().enqueue(c);
         }
@@ -398,8 +404,11 @@ class Distributer {
                 } catch (Exception e) {
                     uncaughtException(cb, response, e);
                 }
-                int callbacksToInvoke = m_callbacksToInvoke.decrementAndGet();
-                assert(callbacksToInvoke >= 0);
+                // only bookkeep for user procs
+                if (handle >= 0) {
+                    int callbacksToInvoke = m_callbacksToInvoke.decrementAndGet();
+                    assert(callbacksToInvoke >= 0);
+                }
             }
         }
 
@@ -476,15 +485,19 @@ class Distributer {
                             ClientResponse.CONNECTION_LOST, new VoltTable[0],
                             "Connection to database host (" + m_socketAddress +
                     ") was lost before a response was received");
-                for (final CallbackBookeeping callBk : m_callbacks.values()) {
+                for (final Entry<Long, CallbackBookeeping> entry : m_callbacks.entrySet()) {
                     try {
-                        callBk.callback.clientCallback(r);
+                        entry.getValue().callback.clientCallback(r);
                     }
                     catch (Exception e) {
-                        uncaughtException(callBk.callback, r, e);
+                        uncaughtException(entry.getValue().callback, r, e);
                     }
                     m_rateLimiter.transactionResponseReceived(System.currentTimeMillis(), -1);
-                    m_callbacksToInvoke.decrementAndGet();
+                    // only bookkeep for user procs
+                    if (entry.getKey() >= 0) {
+                        int callbacksToInvoke = m_callbacksToInvoke.decrementAndGet();
+                        assert(callbacksToInvoke >= 0);
+                    }
                 }
             }
         }
